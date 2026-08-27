@@ -1,8 +1,8 @@
-# seat watcher v3: cron + self-chaining relay (works even if cron never fires)
+# seat watcher v3.1: cron + self-chaining relay
 name: seat-check
 on:
   schedule:
-    - cron: "*/5 * * * *"     # bonus path; the chain below is the main one
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       test_telegram:
@@ -14,7 +14,7 @@ on:
           - "false"
           - "true"
   repository_dispatch:
-    types: [watch-again]      # the relay event: each run triggers the next
+    types: [watch-again]
 
 permissions:
   contents: write
@@ -36,14 +36,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Chain the next check in ~4 minutes
-        if: always()          # even if the check fails, keep the relay alive
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 240
-          gh api repos/${{ github.repository }}/dispatches -f event_type=watch-again
-
       - name: Check seats (or send Telegram test)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -64,3 +56,11 @@ jobs:
           git diff --cached --quiet || git commit -m "update seat state [skip ci]"
           git pull --rebase origin ${GITHUB_REF##*/} || true
           git push
+
+      - name: Chain the next check in ~4 minutes
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 240
+          gh api repos/${{ github.repository }}/dispatches -f event_type=watch-again
