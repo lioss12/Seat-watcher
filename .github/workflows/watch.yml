@@ -1,3 +1,4 @@
+# cron re-armed 2026-08-27
 name: seat-check
 on:
   schedule:
