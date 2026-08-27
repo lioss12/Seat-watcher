@@ -1,13 +1,3 @@
-# Seat watcher — GitHub Actions edition
-# In YOUR repo this file MUST live at:  .github/workflows/watch.yml
-# (create the folders .github/workflows and put this file inside as watch.yml)
-#
-# Before it works:
-#   Repo -> Settings -> Secrets and variables -> Actions -> New repository secret
-#     Name: TELEGRAM_TOKEN   Secret: <token from @BotFather>
-#     Name: TELEGRAM_CHAT    Secret: <your chat id>
-#   Then: Actions tab -> "seat-check" -> Run workflow (great first test!)
-
 name: seat-check
 on:
   schedule:
@@ -36,6 +26,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the state commit can always push
 
       - uses: actions/setup-python@v5
         with:
@@ -53,6 +45,7 @@ jobs:
           fi
 
       - name: Save state back to repo
+        if: inputs.test_telegram != 'true'   # test mode creates no state.json
         run: |
           git config user.name "seat-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
