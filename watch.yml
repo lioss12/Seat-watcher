@@ -1,0 +1,62 @@
+# Seat watcher — GitHub Actions edition
+# In YOUR repo this file MUST live at:  .github/workflows/watch.yml
+# (create the folders .github/workflows and put this file inside as watch.yml)
+#
+# Before it works:
+#   Repo -> Settings -> Secrets and variables -> Actions -> New repository secret
+#     Name: TELEGRAM_TOKEN   Secret: <token from @BotFather>
+#     Name: TELEGRAM_CHAT    Secret: <your chat id>
+#   Then: Actions tab -> "seat-check" -> Run workflow (great first test!)
+
+name: seat-check
+on:
+  schedule:
+    - cron: "*/5 * * * *"     # every 5 min — GitHub's minimum; may drift a few min
+  workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: "Send a Telegram test message instead of checking seats?"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write              # lets the workflow commit state.json back
+
+concurrency:
+  group: seat-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check seats (or send Telegram test)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          if [ "${{ inputs.test_telegram }}" = "true" ]; then
+            python watcher_actions.py --test-telegram
+          else
+            python watcher_actions.py --once
+          fi
+
+      - name: Save state back to repo
+        run: |
+          git config user.name "seat-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "update seat state [skip ci]"
+          git pull --rebase origin ${GITHUB_REF##*/} || true
+          git push
