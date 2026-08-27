@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Seat watcher — phone/cloud edition.
-Works TWO ways with the exact same file:
-  1. GitHub Actions (recommended): runs in the cloud every 5 min, sends the
-     alert to your phone via Telegram. Phone does nothing but receive it.
-     Credentials come from Actions Secrets (env vars) — don't hardcode them
-     if your repo is public.
-  2. Termux on Android: python watcher_actions.py   (loop mode, default)
-     Edit the PASTE_* values below, or export env vars.
+Seat watcher — phone/cloud edition (v2, self-monitoring).
+  1. GitHub Actions: runs every ~5 min, alerts your phone via Telegram.
+  2. Termux on Android: python watcher_actions.py   (loop mode)
 
-Usage:  python watcher_actions.py --once     # single check (Actions mode)
-        python watcher_actions.py            # watch forever (Termux mode)
+v2 adds watch-the-watchman: if the seat data source ever errors, you get a
+one-time warning Telegram (re-arms after a healthy check) instead of dying
+silently. The Actions run also still turns red so nothing hides.
+
+Usage:  python watcher_actions.py --once            # single check (Actions)
+        python watcher_actions.py --test-telegram   # wiring test
+        python watcher_actions.py                   # watch forever (Termux)
 """
 
 import json, os, smtplib, subprocess, sys, time, urllib.request
@@ -75,7 +75,7 @@ def run_once():
     state, sections = load_state(), check()
     hits = [s for s in sections
             if "open" in s["status"].lower() or "wait" in s["status"].lower()]
-    if state:  # empty state = first ever run -> just record baseline
+    if state:  # non-empty = we have a baseline -> compare & alert
         changed = [s for s in sections if state.get(s["classNbr"]) != s["status"]]
         for s in changed:
             print("changed:", s["classNbr"], s["section"],
@@ -92,13 +92,39 @@ def run_once():
     return hits
 
 
+def handle_failure(err):
+    """Check failed: warn once via Telegram, keep old statuses, re-arm on recovery."""
+    prev = load_state()
+    first_time = not prev.get("_error")
+    prev["_error"] = True                     # keep last known statuses too!
+    json.dump(prev, open(STATE_FILE, "w"))
+    if first_time:
+        telegram("⚠️ ENGR 251 watcher ERROR: %s\n\nThe seat data source may be down or "
+                 "changed. Check your repo's Actions tab (runs will show red).\n"
+                 "This warning fires once per incident and re-arms after a healthy check."
+                 % err)
+    else:
+        print("still in error state (already warned).")
+
+
+def run_and_recover():
+    was_error = load_state().get("_error", False)
+    try:
+        run_once()
+        if was_error:
+            telegram("✅ ENGR 251 watcher is healthy again — back to watching.")
+    except Exception as err:
+        handle_failure(err)
+        raise   # keep the red X in Actions so failures stay visible
+
+
 if __name__ == "__main__":
     if "--test-telegram" in sys.argv:
         print("sending a Telegram test message...")
         telegram("🧪 Test alert — your seat watcher's Telegram wiring works!\n\n"
                  "When ENGR 251 opens, this is how you'll get pinged.")
     elif "--once" in sys.argv:
-        run_once()
+        run_and_recover()
     else:
         print("watching ENGR %s term %s every %ss — Ctrl+C stops" % (NUMBER, TERM, INTERVAL))
         errors = 0
